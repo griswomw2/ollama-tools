@@ -27,6 +27,7 @@ class ProxyConfig(BaseModel):
     """Configuration for the proxy server."""
 
     ollama_base_url: str = "http://localhost:11434"
+    ollama_auth_token: str | None = None  # Bearer token for authenticated Ollama endpoints
     working_directory: str | None = None
     allowed_directories: list[str] | None = None
     allow_commands: bool = True
@@ -47,6 +48,12 @@ class OllamaToolProxy:
             allow_commands=self.config.allow_commands,
             command_allowlist=self.config.command_allowlist,
         )
+
+        # Build headers for Ollama requests (auth if configured)
+        self.ollama_headers: dict[str, str] = {}
+        if self.config.ollama_auth_token:
+            self.ollama_headers["Authorization"] = f"Bearer {self.config.ollama_auth_token}"
+
         self.client = httpx.AsyncClient(timeout=300.0)
 
     async def close(self):
@@ -146,7 +153,11 @@ class OllamaToolProxy:
         url = f"{self.config.ollama_base_url}/v1/chat/completions"
 
         try:
-            response = await self.client.post(url, json=request_body)
+            response = await self.client.post(
+                url,
+                json=request_body,
+                headers=self.ollama_headers
+            )
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -220,7 +231,8 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
         """Proxy model list from Ollama."""
         try:
             response = await proxy.client.get(
-                f"{proxy.config.ollama_base_url}/v1/models"
+                f"{proxy.config.ollama_base_url}/v1/models",
+                headers=proxy.ollama_headers
             )
             return response.json()
         except Exception as e:

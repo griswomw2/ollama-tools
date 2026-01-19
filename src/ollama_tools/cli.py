@@ -29,8 +29,12 @@ Examples:
   # Connect to remote Ollama
   ollama-tools-proxy --ollama-url http://192.168.1.100:11434
 
+  # Connect to authenticated remote Ollama
+  ollama-tools-proxy --ollama-url https://api.example.com/ollama --ollama-auth-token $MY_TOKEN
+
 Environment variables:
   OLLAMA_BASE_URL     - Ollama server URL (default: http://localhost:11434)
+  OLLAMA_AUTH_TOKEN   - Bearer token for Ollama authentication
   OLLAMA_TOOLS_PORT   - Proxy server port (default: 8080)
   OLLAMA_TOOLS_HOST   - Proxy server host (default: 0.0.0.0)
         """
@@ -51,6 +55,11 @@ Environment variables:
         "--ollama-url",
         default=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         help="Ollama server URL (default: http://localhost:11434)"
+    )
+    parser.add_argument(
+        "--ollama-auth-token",
+        default=os.environ.get("OLLAMA_AUTH_TOKEN") or os.environ.get("GRIZFAM_OLLAMA_KEY"),
+        help="Bearer token for authenticated Ollama endpoints (env: OLLAMA_AUTH_TOKEN or GRIZFAM_OLLAMA_KEY)"
     )
     parser.add_argument(
         "--working-dir", "-w",
@@ -120,6 +129,7 @@ Environment variables:
 
     config = ProxyConfig(
         ollama_base_url=args.ollama_url,
+        ollama_auth_token=args.ollama_auth_token,
         working_directory=args.working_dir,
         allowed_directories=allowed_dirs,
         allow_commands=not args.no_commands,
@@ -130,19 +140,21 @@ Environment variables:
     )
 
     # Print startup info
+    auth_status = "Configured" if config.ollama_auth_token else "None"
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                   Ollama Tools Proxy                        ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Proxy URL:      http://{args.host}:{args.port}
 ║  Ollama URL:     {config.ollama_base_url}
+║  Ollama Auth:    {auth_status}
 ║  Working Dir:    {config.working_directory}
 ║  Commands:       {"Enabled" if config.allow_commands else "Disabled"}
 ║  Default Model:  {config.default_model}
 ╚══════════════════════════════════════════════════════════════╝
 
 Use with Claude Code:
-  ANTHROPIC_AUTH_TOKEN=ollama ANTHROPIC_BASE_URL=http://localhost:{args.port} claude --model {config.default_model}
+  ANTHROPIC_AUTH_TOKEN=dummy ANTHROPIC_BASE_URL=http://localhost:{args.port} claude --model {config.default_model}
 
 Use with OpenAI-compatible clients:
   POST http://localhost:{args.port}/v1/chat/completions
