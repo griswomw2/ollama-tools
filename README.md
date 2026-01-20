@@ -16,7 +16,7 @@ This enables models like `devstral-small-2:24b` to effectively work with codebas
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/ollama-tools.git
+git clone https://github.com/griswomw2/ollama-tools.git
 cd ollama-tools
 
 # Create virtual environment
@@ -100,6 +100,9 @@ Options:
   -p, --port PORT           Port to run on (default: 8080)
   -H, --host HOST           Host to bind to (default: 0.0.0.0)
   --ollama-url URL          Ollama server URL (default: http://localhost:11434)
+  --ollama-auth-token TOKEN Bearer token for authenticated Ollama endpoints
+  --use-anthropic-api       Use Ollama's /v1/messages endpoint (for Claude Code)
+  --force-model             Always use default-model, ignore client-specified models
   -w, --working-dir DIR     Working directory for file operations
   --allowed-dirs DIR [...]  Additional accessible directories
   --no-commands             Disable the run_command tool
@@ -116,8 +119,80 @@ Options:
 | Variable | Description |
 |----------|-------------|
 | `OLLAMA_BASE_URL` | Ollama server URL |
+| `OLLAMA_AUTH_TOKEN` | Bearer token for authenticated Ollama endpoints |
 | `OLLAMA_TOOLS_PORT` | Proxy server port |
 | `OLLAMA_TOOLS_HOST` | Proxy server host |
+
+## Claude Code Integration
+
+For seamless Claude Code integration with a remote Ollama server, add this function to your `~/.bashrc`:
+
+```bash
+claude_devstral() {
+  local proxy_pid=""
+  local proxy_started=false
+  local proxy_ready=false
+
+  # Check if proxy is already running on port 8080
+  if ! curl -s http://localhost:8080/health >/dev/null 2>&1; then
+    echo "Starting ollama-tools-proxy..."
+    # Adjust the path to match your installation
+    /path/to/ollama-tools/.venv/bin/ollama-tools-proxy \
+      --ollama-url https://your-ollama-server.com \
+      --ollama-auth-token "$YOUR_AUTH_TOKEN" \
+      --use-anthropic-api \
+      --force-model \
+      --working-dir "$(pwd)" \
+      >/dev/null 2>&1 &
+    proxy_pid=$!
+    proxy_started=true
+
+    # Wait for proxy to be ready (max 10 seconds)
+    echo -n "Waiting for proxy"
+    for i in {1..20}; do
+      if curl -s http://localhost:8080/health >/dev/null 2>&1; then
+        proxy_ready=true
+        echo " ready!"
+        break
+      fi
+      echo -n "."
+      sleep 0.5
+    done
+
+    if [ "$proxy_ready" = false ]; then
+      echo " timeout!"
+      echo "Warning: Proxy may not have started correctly."
+    fi
+  else
+    echo "Proxy already running."
+  fi
+
+  # Run Claude Code (proxy forces the model)
+  export ANTHROPIC_AUTH_TOKEN=dummy
+  export ANTHROPIC_BASE_URL=http://localhost:8080
+  claude "$@"
+
+  # Clean up proxy if we started it
+  if [ "$proxy_started" = true ] && [ -n "$proxy_pid" ]; then
+    echo "Stopping proxy..."
+    kill "$proxy_pid" 2>/dev/null
+    wait "$proxy_pid" 2>/dev/null
+  fi
+}
+```
+
+Then reload and use:
+
+```bash
+source ~/.bashrc
+claude_devstral
+```
+
+This function:
+- Starts the proxy automatically if not running
+- Uses `--force-model` to override Claude Code's default model with devstral
+- Passes through authentication to your remote Ollama
+- Cleans up the proxy when you exit Claude Code
 
 ## Security Considerations
 
