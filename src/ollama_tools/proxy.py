@@ -36,6 +36,7 @@ class ProxyConfig(BaseModel):
     inject_tools: bool = True
     max_tool_iterations: int = 10
     default_model: str = "devstral-small-2:24b"
+    force_model: bool = False  # Always use default_model, ignore client-specified models
 
 
 class OllamaToolProxy:
@@ -178,10 +179,12 @@ class OllamaToolProxy:
         # Force non-streaming for this method
         request_body = {**request_body, "stream": False}
 
-        # Override model if client sent a non-Ollama model name
-        if request_body.get("model", "").startswith("claude"):
-            logger.info(f"Overriding model {request_body['model']} with {self.config.default_model}")
-            request_body["model"] = self.config.default_model
+        # Override model if force_model is enabled
+        if self.config.force_model:
+            client_model = request_body.get("model", "")
+            if client_model != self.config.default_model:
+                logger.info(f"Forcing model: {client_model} -> {self.config.default_model}")
+                request_body["model"] = self.config.default_model
 
         logger.debug(f"Anthropic API request to {url}: {request_body}")
 
@@ -219,10 +222,12 @@ class OllamaToolProxy:
         # Ensure streaming is enabled
         request_body = {**request_body, "stream": True}
 
-        # Override model if client sent a non-Ollama model name
-        if request_body.get("model", "").startswith("claude"):
-            logger.info(f"Overriding model {request_body['model']} with {self.config.default_model}")
-            request_body["model"] = self.config.default_model
+        # Override model if force_model is enabled
+        if self.config.force_model:
+            client_model = request_body.get("model", "")
+            if client_model != self.config.default_model:
+                logger.info(f"Forcing model: {client_model} -> {self.config.default_model}")
+                request_body["model"] = self.config.default_model
 
         logger.debug(f"Anthropic API streaming request to {url}")
 

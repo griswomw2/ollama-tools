@@ -105,6 +105,11 @@ Environment variables:
         help="Default model to use if not specified in request"
     )
     parser.add_argument(
+        "--force-model",
+        action="store_true",
+        help="Always use default-model, ignoring client-specified models (useful when client sends wrong model names)"
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -146,11 +151,13 @@ Environment variables:
         inject_tools=not args.no_inject_tools,
         max_tool_iterations=args.max_iterations,
         default_model=args.default_model,
+        force_model=args.force_model,
     )
 
     # Print startup info
     auth_status = "Configured" if config.ollama_auth_token else "None"
     api_mode = "Anthropic (/v1/messages)" if config.use_anthropic_api else "OpenAI (/v1/chat/completions)"
+    model_mode = f"{config.default_model} (forced)" if config.force_model else config.default_model
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                   Ollama Tools Proxy                        ║
@@ -161,11 +168,11 @@ Environment variables:
 ║  Ollama API:     {api_mode}
 ║  Working Dir:    {config.working_directory}
 ║  Commands:       {"Enabled" if config.allow_commands else "Disabled"}
-║  Default Model:  {config.default_model}
+║  Model:          {model_mode}
 ╚══════════════════════════════════════════════════════════════╝
 
 Use with Claude Code:
-  ANTHROPIC_AUTH_TOKEN=dummy ANTHROPIC_BASE_URL=http://localhost:{args.port} claude --model {config.default_model}
+  ANTHROPIC_AUTH_TOKEN=dummy ANTHROPIC_BASE_URL=http://localhost:{args.port} claude
 
 Use with OpenAI-compatible clients:
   POST http://localhost:{args.port}/v1/chat/completions
