@@ -300,6 +300,24 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
     async def health():
         return {"status": "healthy"}
 
+    # Stub endpoints to silence Claude Code 404s
+    @app.post("/api/event_logging/batch")
+    async def event_logging_batch():
+        """Stub for Claude Code telemetry - silently accept and ignore."""
+        return {"status": "ok"}
+
+    @app.post("/v1/messages/count_tokens")
+    async def count_tokens(request: Request):
+        """Stub for token counting - return estimate based on message length."""
+        try:
+            body = await request.json()
+            # Rough estimate: ~4 chars per token
+            text = str(body.get("messages", []))
+            estimated_tokens = len(text) // 4
+            return {"input_tokens": estimated_tokens}
+        except Exception:
+            return {"input_tokens": 0}
+
     @app.get("/v1/models")
     async def list_models():
         """Proxy model list from Ollama."""
