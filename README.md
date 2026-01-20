@@ -133,6 +133,14 @@ claude_devstral() {
   local proxy_started=false
   local proxy_ready=false
 
+  # Kill existing proxy if --restart flag is passed
+  if [ "$1" = "--restart" ]; then
+    echo "Killing existing proxy..."
+    pkill -f "ollama-tools-proxy" 2>/dev/null
+    sleep 1
+    shift  # Remove --restart from args
+  fi
+
   # Check if proxy is already running on port 8080
   if ! curl -s http://localhost:8080/health >/dev/null 2>&1; then
     echo "Starting ollama-tools-proxy..."
@@ -152,7 +160,7 @@ claude_devstral() {
     for i in {1..20}; do
       if curl -s http://localhost:8080/health >/dev/null 2>&1; then
         proxy_ready=true
-        echo " ready!"
+        echo " ready! (devstral-small-2:24b forced)"
         break
       fi
       echo -n "."
@@ -164,13 +172,13 @@ claude_devstral() {
       echo "Warning: Proxy may not have started correctly."
     fi
   else
-    echo "Proxy already running."
+    echo "Proxy already running. Use 'claude_devstral --restart' to restart it."
   fi
 
-  # Run Claude Code (proxy forces the model)
+  # Run Claude Code with devstral model (proxy also forces it, but this sets the UI)
   export ANTHROPIC_AUTH_TOKEN=dummy
   export ANTHROPIC_BASE_URL=http://localhost:8080
-  claude "$@"
+  claude --model devstral-small-2:24b "$@"
 
   # Clean up proxy if we started it
   if [ "$proxy_started" = true ] && [ -n "$proxy_pid" ]; then
@@ -179,18 +187,27 @@ claude_devstral() {
     wait "$proxy_pid" 2>/dev/null
   fi
 }
+
+# Helper to kill any lingering proxy
+kill_ollama_proxy() {
+  pkill -f "ollama-tools-proxy" 2>/dev/null && echo "Proxy killed." || echo "No proxy running."
+}
 ```
 
 Then reload and use:
 
 ```bash
 source ~/.bashrc
-claude_devstral
+claude_devstral              # Normal usage
+claude_devstral --restart    # Force restart proxy if stale
+kill_ollama_proxy            # Kill any lingering proxy processes
 ```
 
 This function:
 - Starts the proxy automatically if not running
+- Supports `--restart` flag to kill and restart a stale proxy
 - Uses `--force-model` to override Claude Code's default model with devstral
+- Sets `--model` on Claude Code so the UI displays correctly
 - Passes through authentication to your remote Ollama
 - Cleans up the proxy when you exit Claude Code
 
