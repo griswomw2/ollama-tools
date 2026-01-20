@@ -28,6 +28,7 @@ class ProxyConfig(BaseModel):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_auth_token: str | None = None  # Bearer token for authenticated Ollama endpoints
+    use_anthropic_api: bool = False  # Use /v1/messages instead of /v1/chat/completions
     working_directory: str | None = None
     allowed_directories: list[str] | None = None
     allow_commands: bool = True
@@ -147,7 +148,7 @@ class OllamaToolProxy:
         request_body: dict[str, Any],
         messages: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """Make a request to Ollama."""
+        """Make a request to Ollama using OpenAI-compatible API."""
         request_body["messages"] = messages
 
         url = f"{self.config.ollama_base_url}/v1/chat/completions"
@@ -165,6 +166,28 @@ class OllamaToolProxy:
             raise
         except Exception as e:
             logger.error(f"Ollama request error: {e}")
+            raise
+
+    async def _call_ollama_anthropic(
+        self,
+        request_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Make a request to Ollama using Anthropic-compatible API (/v1/messages)."""
+        url = f"{self.config.ollama_base_url}/v1/messages"
+
+        try:
+            response = await self.client.post(
+                url,
+                json=request_body,
+                headers=self.ollama_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Ollama Anthropic API request failed: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Ollama Anthropic API request error: {e}")
             raise
 
     async def chat_completion_stream(
@@ -288,14 +311,30 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
     async def messages_endpoint(request: Request):
         """
         Anthropic-style messages endpoint.
-        Converts to OpenAI format, processes, and converts back.
+        If use_anthropic_api is enabled, forwards directly to Ollama's /v1/messages.
+        Otherwise, converts to OpenAI format, processes, and converts back.
         """
         try:
             body = await request.json()
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-        # Convert Anthropic format to OpenAI format
+        # Use default model if not specified
+        if "model" not in body or not body["model"]:
+            body["model"] = proxy.config.default_model
+
+        # If using Anthropic API directly, forward the request
+        if proxy.config.use_anthropic_api:
+            try:
+                result = await proxy._call_ollama_anthropic(body)
+                return result
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+            except Exception as e:
+                logger.exception("Error forwarding Anthropic request")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # Otherwise, convert to OpenAI format and process
         messages = []
         system_prompt = body.get("system", "")
         if system_prompt:

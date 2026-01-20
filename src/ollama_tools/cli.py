@@ -32,6 +32,9 @@ Examples:
   # Connect to authenticated remote Ollama
   ollama-tools-proxy --ollama-url https://api.example.com/ollama --ollama-auth-token $MY_TOKEN
 
+  # Use Ollama's native Anthropic API (/v1/messages) instead of OpenAI API
+  ollama-tools-proxy --ollama-url https://api.grizfam.ai/ollama-direct --use-anthropic-api
+
 Environment variables:
   OLLAMA_BASE_URL     - Ollama server URL (default: http://localhost:11434)
   OLLAMA_AUTH_TOKEN   - Bearer token for Ollama authentication
@@ -60,6 +63,11 @@ Environment variables:
         "--ollama-auth-token",
         default=os.environ.get("OLLAMA_AUTH_TOKEN") or os.environ.get("GRIZFAM_OLLAMA_KEY"),
         help="Bearer token for authenticated Ollama endpoints (env: OLLAMA_AUTH_TOKEN or GRIZFAM_OLLAMA_KEY)"
+    )
+    parser.add_argument(
+        "--use-anthropic-api",
+        action="store_true",
+        help="Use Ollama's Anthropic-compatible API (/v1/messages) instead of OpenAI API (/v1/chat/completions)"
     )
     parser.add_argument(
         "--working-dir", "-w",
@@ -130,6 +138,7 @@ Environment variables:
     config = ProxyConfig(
         ollama_base_url=args.ollama_url,
         ollama_auth_token=args.ollama_auth_token,
+        use_anthropic_api=args.use_anthropic_api,
         working_directory=args.working_dir,
         allowed_directories=allowed_dirs,
         allow_commands=not args.no_commands,
@@ -141,6 +150,7 @@ Environment variables:
 
     # Print startup info
     auth_status = "Configured" if config.ollama_auth_token else "None"
+    api_mode = "Anthropic (/v1/messages)" if config.use_anthropic_api else "OpenAI (/v1/chat/completions)"
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                   Ollama Tools Proxy                        ║
@@ -148,6 +158,7 @@ Environment variables:
 ║  Proxy URL:      http://{args.host}:{args.port}
 ║  Ollama URL:     {config.ollama_base_url}
 ║  Ollama Auth:    {auth_status}
+║  Ollama API:     {api_mode}
 ║  Working Dir:    {config.working_directory}
 ║  Commands:       {"Enabled" if config.allow_commands else "Disabled"}
 ║  Default Model:  {config.default_model}
