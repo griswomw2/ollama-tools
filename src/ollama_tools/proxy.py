@@ -172,10 +172,10 @@ class OllamaToolProxy:
         self,
         request_body: dict[str, Any]
     ) -> dict[str, Any]:
-        """Make a request to Ollama using Anthropic-compatible API (/v1/messages)."""
+        """Make a request to Ollama using Anthropic-compatible API (/v1/messages) - non-streaming."""
         url = f"{self.config.ollama_base_url}/v1/messages"
 
-        # Force non-streaming for now to get a single JSON response
+        # Force non-streaming for this method
         request_body = {**request_body, "stream": False}
 
         # Override model if client sent a non-Ollama model name
@@ -208,6 +208,33 @@ class OllamaToolProxy:
         except Exception as e:
             logger.error(f"Ollama Anthropic API request error: {e}")
             raise
+
+    async def _stream_ollama_anthropic(
+        self,
+        request_body: dict[str, Any]
+    ) -> AsyncIterator[bytes]:
+        """Stream a request to Ollama using Anthropic-compatible API (/v1/messages)."""
+        url = f"{self.config.ollama_base_url}/v1/messages"
+
+        # Ensure streaming is enabled
+        request_body = {**request_body, "stream": True}
+
+        # Override model if client sent a non-Ollama model name
+        if request_body.get("model", "").startswith("claude"):
+            logger.info(f"Overriding model {request_body['model']} with {self.config.default_model}")
+            request_body["model"] = self.config.default_model
+
+        logger.debug(f"Anthropic API streaming request to {url}")
+
+        async with self.client.stream(
+            "POST",
+            url,
+            json=request_body,
+            headers=self.ollama_headers
+        ) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                yield chunk
 
     async def chat_completion_stream(
         self,
@@ -342,11 +369,21 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
         if "model" not in body or not body["model"]:
             body["model"] = proxy.config.default_model
 
+        # Check if streaming is requested
+        stream = body.get("stream", False)
+
         # If using Anthropic API directly, forward the request
         if proxy.config.use_anthropic_api:
             try:
-                result = await proxy._call_ollama_anthropic(body)
-                return result
+                if stream:
+                    # Stream the response back to client
+                    return StreamingResponse(
+                        proxy._stream_ollama_anthropic(body),
+                        media_type="text/event-stream"
+                    )
+                else:
+                    result = await proxy._call_ollama_anthropic(body)
+                    return result
             except httpx.HTTPStatusError as e:
                 raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
             except Exception as e:
