@@ -175,6 +175,16 @@ class OllamaToolProxy:
         """Make a request to Ollama using Anthropic-compatible API (/v1/messages)."""
         url = f"{self.config.ollama_base_url}/v1/messages"
 
+        # Force non-streaming for now to get a single JSON response
+        request_body = {**request_body, "stream": False}
+
+        # Override model if client sent a non-Ollama model name
+        if request_body.get("model", "").startswith("claude"):
+            logger.info(f"Overriding model {request_body['model']} with {self.config.default_model}")
+            request_body["model"] = self.config.default_model
+
+        logger.debug(f"Anthropic API request to {url}: {request_body}")
+
         try:
             response = await self.client.post(
                 url,
@@ -182,6 +192,15 @@ class OllamaToolProxy:
                 headers=self.ollama_headers
             )
             response.raise_for_status()
+
+            # Log raw response for debugging
+            raw_text = response.text
+            logger.debug(f"Anthropic API raw response: {raw_text[:500] if raw_text else '(empty)'}")
+
+            if not raw_text:
+                logger.error("Ollama returned empty response body")
+                raise ValueError("Empty response from Ollama")
+
             return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(f"Ollama Anthropic API request failed: {e.response.status_code} - {e.response.text}")
