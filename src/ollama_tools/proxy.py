@@ -229,7 +229,23 @@ class OllamaToolProxy:
                 logger.info(f"Forcing model: {client_model} -> {self.config.default_model}")
                 request_body["model"] = self.config.default_model
 
+        # Log request content
         logger.debug(f"Anthropic API streaming request to {url}")
+        messages = request_body.get("messages", [])
+        logger.info(f"REQUEST: {len(messages)} messages")
+        for i, msg in enumerate(messages[-3:]):  # Log last 3 messages
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content_summary = f"[{len(content)} blocks]"
+            else:
+                content_summary = content[:200] + "..." if len(str(content)) > 200 else content
+            logger.info(f"  msg[{i}] {role}: {content_summary}")
+
+        tools = request_body.get("tools", [])
+        if tools:
+            tool_names = [t.get("name", "?") for t in tools]
+            logger.info(f"  tools: {tool_names[:10]}{'...' if len(tool_names) > 10 else ''}")
 
         async with self.client.stream(
             "POST",
@@ -238,8 +254,27 @@ class OllamaToolProxy:
             headers=self.ollama_headers
         ) as response:
             response.raise_for_status()
+            response_text = ""
             async for chunk in response.aiter_bytes():
+                # Accumulate for logging
+                try:
+                    response_text += chunk.decode("utf-8", errors="ignore")
+                except:
+                    pass
                 yield chunk
+
+            # Log response summary
+            if "tool_use" in response_text:
+                logger.info(f"RESPONSE: Contains tool_use")
+                # Try to extract tool names
+                import re
+                tool_matches = re.findall(r'"name"\s*:\s*"([^"]+)"', response_text)
+                if tool_matches:
+                    logger.info(f"  tools called: {tool_matches}")
+            else:
+                # Log first part of text response
+                text_preview = response_text[:500].replace('\n', ' ')
+                logger.info(f"RESPONSE: {text_preview}...")
 
     async def chat_completion_stream(
         self,
